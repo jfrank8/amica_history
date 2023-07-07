@@ -23,10 +23,10 @@ end
 participants = readtable(fullfile( bidsRepo, 'participants.tsv'), 'filetype', 'delimitedtext');
 nParticipants = size(participants,1);
 
-EEG = pop_loadset('t2.set');
+%EEG = pop_loadset('t2.set');
 numprocs = 1;
 max_threads = 1;
-num_models = 1;
+%num_models = 1;
 max_iter = 1000;
 histstep = 10;
 bidsRun = '1'
@@ -35,7 +35,7 @@ bidsRun = '1'
 %     outdir = [ pwd filesep 'amicaouttmp' iSubject filesep ];
 % end
 
-%[weights,sphere,mods] = runamica15(EEG.data, 'num_models', num_models, ...
+%[weights,sphere,mods] = runamica15(EEG.data, ...
 %                                   'outdir',outdir, 'numprocs', numprocs,'max_threads',max_threads, 'max_iter',max_iter,'do_history',1,'histstep',histstep);
 rvAll=zeros(nParticipants,max_iter/histstep,31);
 pmiAll = zeros(nParticipants,max_iter/histstep);
@@ -51,26 +51,34 @@ for iSubject = 1:nParticipants % switch to parfor
     filePath = fileparts(fileName);
     
     % load data
-   
+    EEG = pop_loadset(fileName);
     EEG = pop_select(EEG, 'point', [0 10000]);
     EEG = pop_eegfiltnew(EEG, 'locutoff',0.5); % something to look into, how filtering affect ICA
-    % [weights,sphere,mods] = runamica15(EEG.data, 'num_models', num_models, ...
-    %                                'outdir',outdir, 'numprocs', numprocs,'max_threads',max_threads, 'max_iter',max_iter,'do_history',1,'histstep',histstep);
+    %[weights,sphere,mods] = runamica15(EEG.data, ...
+    %                                'outdir',outdir, 'numprocs', numprocs,'max_threads',max_threads, 'max_iter',max_iter,'do_history',1,'histstep',histstep);        
+        % run ICA on data
+    EEG = pop_runamica(EEG,'outdir',outdir, 'numprocs', numprocs,'max_threads',max_threads, 'max_iter',max_iter,'do_history',1,'histstep',histstep)
+    EEG.icachansind = [1:EEG.nbchan]
+    EEG.icaact = (EEG.icaweights*EEG.icasphere)*EEG.data(EEG.icachansind,:)
+    %oldicaact = (EEG.icaweights*EEG.icasphere)*EEG.data(EEG.icachansind,:);
+    
     for iter = histstep:histstep:max_iter
 
       
        
        histdir = [outdir filesep 'history' filesep int2str(iter)];
-       modout = loadmodout15(histdir);
+       %modout = loadmodout15(histdir);
     
        EEG = pop_loadset(fileName);
-    
+       EEG = pop_select(EEG, 'point', [0 10000]);
+       EEG = pop_eegfiltnew(EEG, 'locutoff',0.5); % something to look into, how filtering affect ICA
+       EEG = eeg_loadamica(EEG,histdir)
        % load individual ICA model into EEG structure
-       model_index = 1;
-       EEG.icawinv = modout.A(:,:,model_index);
-       EEG.icaweights = modout.W(:,:,model_index);
-       EEG.icasphere = modout.S;
-       EEG = eeg_checkset(EEG);
+       %model_index = 1;
+       %EEG.icawinv = modout.A(:,:,model_index);
+       %EEG.icaweights = modout.W(:,:,model_index);
+       %EEG.icasphere = modout.S;
+       EEG.icachansind = [1:EEG.nbchan]
        EEG.icaact = (EEG.icaweights*EEG.icasphere)*EEG.data(EEG.icachansind,:);
     
        %compute PMI
@@ -97,23 +105,42 @@ for iSubject = 1:nParticipants % switch to parfor
     
     end
 end
+
+save('hisres.mat','pmirAll','mirAll','rvAll')
+load('hisres.mat');
+
 figure()
-plot(histstep:histstep:max_iter,mean(pmirAll));
+plot(histstep:histstep:max_iter,mean(pmirAll),'-ok');
 xlabel('Number of Steps')
+ylabel('Remnant Pairwise Mutual Information (%)')
+title('Remnant PMI')
+
+figure()
+errorbar(histstep:histstep:max_iter,mean(pmirAll),std(pmirAll));
+xlabel('Number of Steps')
+ylabel('Remnant Pairwise Mutual Information (%)')
 title('Remnant PMI')
 
 
 figure()
-plot(histstep:histstep:max_iter,mean(mirAll));
+plot(histstep:histstep:max_iter,(mean(mirAll)*1.4427*250)/1000,'-ok');
 xlabel('Number of Steps')
+ylabel('Mutual Information Reduction (kbits/sec)')
 title('MIR')
 
-meanRv = squeeze(mean(rvAll));
+figure()
+errorbar(histstep:histstep:max_iter,(mean(mirAll)*1.4427*250)/1000,std(mirAll));
+xlabel('Number of Steps')
+ylabel('Mutual Information Reduction (kbits/sec)')
+title('MIR')
+
+meanRv = transpose(squeeze(mean(rvAll)));
 figure('position', [10   10   1000   1000]);
 hh = semilogy(sort(meanRv(:,1)), 'w'); hold on;
 delete(hh);
+c = flip(autumn(max_iter/histstep),1);
 for i = histstep:histstep:max_iter
-    h = semilogy(linspace(1,100,length(sort(meanRv(:,(i/histstep))))), sort(meanRv(:,(i/histstep)))); hold on;
+    h = semilogy(linspace(1,100,length(sort(meanRv(:,(i/histstep))))), sort(meanRv(:,(i/histstep))),'Color',c(i/histstep,:)); hold on;
 end
 view([90 270]);
 xlabel('Percent of ICA components');
@@ -125,9 +152,9 @@ set(gcf, 'paperpositionmode', 'auto');
 setfont(gcf, 'fontsize', 20);
 %set(lh, 'position', [0.1598 0.2119 0.1670 0.7141]);
 title('dipolarity')
-xlabel('Dipole model residual variance(%)')
-ylabel('Percent of ICA Componets')
-legend('Raw','Average Ref')
+ylabel('Dipole model residual variance(%)')
+xlabel('Percent of ICA Componets')
+
 
 %hold on;
 %plot(mir_averef);
