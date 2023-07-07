@@ -6,6 +6,7 @@ bidsSess  = 'ses-01';
 
 %% ---------------
 %% End of settings
+%% end of set
 %% ---------------
 
 tmpp = fileparts(which('dipplot'));
@@ -17,7 +18,7 @@ addpath(fullfile(tmpp, 'dipfit1.02', 'copyprivate'));
 % add necessary path (your path might be different
 if ~exist('eeg_checkset.m', 'file')
     addpath('~/eeglab');
-    eeglab;
+    eeglab;Gwenevere
 end
 
 participants = readtable(fullfile( bidsRepo, 'participants.tsv'), 'filetype', 'delimitedtext');
